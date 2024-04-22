@@ -65,6 +65,15 @@ function checkIfRoomIsEmpty(room) {
     return Array.from(clients).length === 0;
 }
 
+function removeUserFromRoom(room, userId) {
+    const roomIndex = rooms[room].findIndex(user => user.userId === userId);
+    if (roomIndex === -1) {
+        return rooms[room];
+    }
+    rooms[room].splice(roomIndex, 1);
+    const roomInformation = rooms[room];
+    return roomInformation;
+}
 function getUserRooms(userId) {
     return userRooms[userId] || [];
 }
@@ -76,18 +85,16 @@ io.on('connection', (socket) => {
     console.log('a user connected: ' + socket.id);
     socket.on('disconnect', () => {
         console.log('user disconnected: ' + socket.id);
-        const rooms = getUserRooms(socket.id);
-        rooms.forEach(room => {
+        const disconnectRooms = getUserRooms(socket.id);
+        disconnectRooms.forEach(room => {
             socket.leave(room);
             const usersInRoom = getUsersInRoom(room);
             if (checkIfRoomIsEmpty(room)) {
                 activeRooms.delete(room);
                 console.log('room is empty: ' + room);
             }
-            //  const roomIndex = rooms[room].findIndex(user => user[2] === socket.id);
-            //  rooms[room].splice(roomIndex, 1);
-            //  const users = rooms[room];
-            io.to(room).emit('left', { room, users: usersInRoom });
+            const roomInformation = removeUserFromRoom(room, socket.id);
+            io.to(room).emit('left', { roomInformation });
         });
         delete userRooms[socket.id];
     });
@@ -105,11 +112,8 @@ io.on('connection', (socket) => {
     socket.on('join', (room) => {
         if (activeRooms.has(room)) {
             socket.join(room);
-            console.log(socket.rooms);
             const usersInRoom = getUsersInRoom(room);
             console.log("users in room: " + room + " " + usersInRoom);
-
-            io.to(room).emit('joined', { room, users: usersInRoom });
             addUserRoom(socket.id, room);
 
         } else {
@@ -126,10 +130,11 @@ io.on('connection', (socket) => {
         if (!rooms[roomId]) {
             rooms[roomId] = [];
         }
+
         rooms[roomId].push({ name: user, profilePicture: profilePicture, userId: socketId });
         const users = rooms[roomId];
-        console.log(users);
-
+        console.log(roomId)
+        console.log("User in room " + roomId + " Created");
         io.to(roomId).emit('user selected', users);
     });
 
@@ -141,15 +146,25 @@ io.on('connection', (socket) => {
         socket.leave(room);
         removeUserRoom(socket.id, room);
         const usersInRoom = getUsersInRoom(room);
+        console.log(userRooms)
         if (checkIfRoomIsEmpty(room)) {
             activeRooms.delete(room);
             console.log('deleted room: ' + room);
         }
         // remove user from room
-        //  const roomIndex = rooms[room].findIndex(user => user[2] === socket.id);
-        //  rooms[room].splice(roomIndex, 1);
-        //  const users = rooms[room];
-        io.to(room).emit('left', { room, users: usersInRoom });
+
+
+        if (rooms[room]) {
+
+            const roomInformation = removeUserFromRoom(room, socket.id);
+            console.log("Removed user information from room.");
+            io.to(room).emit('left', { roomInformation });
+
+        } else {
+            console.log(`Room ${room} does not exist.`);
+        }
+        // rooms[room].splice(roomIndex, 1);
+        // const users = rooms[room];
     });
 
 
