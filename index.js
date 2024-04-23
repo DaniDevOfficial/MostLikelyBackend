@@ -153,11 +153,19 @@ io.on('connection', (socket) => {
 
         rooms[roomId].players.push({ name: user, profilePicture: profilePicture, playerId: socketId });
         const roomInformation = rooms[roomId];
-        console.log(roomId)
         console.log("User in room " + roomId + " Created");
         io.to(roomId).emit('user selected', roomInformation);
     });
 
+    socket.on('settings update', (newSettings) => {
+        const roomId = newSettings.roomId;
+        const newSettingsData = newSettings.newSettings;
+        console.log(newSettingsData)
+        rooms[roomId].game.settings = newSettingsData;
+        const newRoomData = rooms[roomId];
+        console.log("Settings updated for room ", newSettingsData);
+        io.to(roomId).emit('room information updated', newRoomData);
+    });
 
 
 
