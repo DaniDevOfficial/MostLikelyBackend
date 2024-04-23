@@ -57,6 +57,7 @@ function removeUserRoom(userId, roomId) {
         }
     }
 }
+
 function checkIfRoomIsEmpty(room) {
     const clients = io.sockets.adapter.rooms.get(room);
     if (!clients) {
@@ -69,7 +70,7 @@ function removeUserFromRoom(room, userId) {
     if (!rooms[room]) {
         return rooms[room];
     }
-    const roomIndex = rooms[room].players.findIndex(player => player.userId === userId);
+    const roomIndex = rooms[room].players.findIndex(player => player.playerId === userId);
     if (roomIndex === -1) {
         return rooms[room];
     }
@@ -101,6 +102,7 @@ io.on('connection', (socket) => {
             const roomInformation = removeUserFromRoom(room, socket.id);
             io.to(room).emit('left', { roomInformation });
         });
+        console.log("All now Active Rooms: ", activeRooms);
         delete userRooms[socket.id];
     });
 
@@ -149,7 +151,7 @@ io.on('connection', (socket) => {
         }
 
 
-        rooms[roomId].players.push({ name: user, profilePicture: profilePicture, userId: socketId });
+        rooms[roomId].players.push({ name: user, profilePicture: profilePicture, playerId: socketId });
         const roomInformation = rooms[roomId];
         console.log(roomId)
         console.log("User in room " + roomId + " Created");
