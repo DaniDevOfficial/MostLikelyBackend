@@ -66,14 +66,18 @@ function checkIfRoomIsEmpty(room) {
 }
 
 function removeUserFromRoom(room, userId) {
-    const roomIndex = rooms[room].findIndex(user => user.userId === userId);
+    if (!rooms[room]) {
+        return rooms[room];
+    }
+    const roomIndex = rooms[room].players.findIndex(player => player.userId === userId);
     if (roomIndex === -1) {
         return rooms[room];
     }
-    rooms[room].splice(roomIndex, 1);
-    const roomInformation = rooms[room];
-    return roomInformation;
+    rooms[room].players.splice(roomIndex, 1);
+
+    return rooms[room];
 }
+
 function getUserRooms(userId) {
     return userRooms[userId] || [];
 }
@@ -93,11 +97,13 @@ io.on('connection', (socket) => {
                 activeRooms.delete(room);
                 console.log('room is empty: ' + room);
             }
+
             const roomInformation = removeUserFromRoom(room, socket.id);
             io.to(room).emit('left', { roomInformation });
         });
         delete userRooms[socket.id];
     });
+
     socket.on('create', () => {
         let newRoom = generateRandomRoom();
         while (activeRooms.has(newRoom)) {
@@ -128,14 +134,26 @@ io.on('connection', (socket) => {
         const socketId = socket.id;
 
         if (!rooms[roomId]) {
-            rooms[roomId] = [];
+            rooms[roomId] = {
+                game: {
+                    settings: {
+                        QuestionWriteTime: 120,
+                        VoteTime: 30,
+                        AmountOfQuestionsPerPlayer: 2,
+                    },
+                    state: "lobby",
+                },
+                players: [],
+                questions: [],
+            };
         }
 
-        rooms[roomId].push({ name: user, profilePicture: profilePicture, userId: socketId });
-        const users = rooms[roomId];
+
+        rooms[roomId].players.push({ name: user, profilePicture: profilePicture, userId: socketId });
+        const roomInformation = rooms[roomId];
         console.log(roomId)
         console.log("User in room " + roomId + " Created");
-        io.to(roomId).emit('user selected', users);
+        io.to(roomId).emit('user selected', roomInformation);
     });
 
 
