@@ -19,6 +19,25 @@ const activeRooms = new Set();
 const userRooms = {};
 const rooms = {};
 
+
+const fs = require('fs');
+const path = require('path');
+
+// Function to create or append to a log file
+function writeToLog(message) {
+    const logFilePath = path.join(__dirname, 'logs', 'app.log');
+    const timestamp = new Date().toISOString();
+    const logMessage = `[${timestamp}] ${message}\n`;
+
+    fs.appendFile(logFilePath, logMessage, (err) => {
+        if (err) {
+            console.error('Error writing to log file:', err);
+        }
+    }); 
+} 
+writeToLog("Server Started");
+
+
 function getUsersInRoom(roomName) {
     const clients = io.sockets.adapter.rooms.get(roomName);
     if (!clients) {
@@ -86,16 +105,19 @@ function getUserRooms(userId) {
 
 io.on('connection', (socket) => {
 
-
+    writeToLog('A user connected: ' + socket.id);
     console.log('a user connected: ' + socket.id);
     socket.on('disconnect', () => {
         console.log('user disconnected: ' + socket.id);
+        writeToLog('A user disconnected: ' + socket.id);
+
         const disconnectRooms = getUserRooms(socket.id);
         disconnectRooms.forEach(room => {
             socket.leave(room);
             const usersInRoom = getUsersInRoom(room);
             if (checkIfRoomIsEmpty(room)) {
                 activeRooms.delete(room);
+                writeToLog('room is empty and got deleted: ' + room);
                 console.log('room is empty: ' + room);
             }
 
@@ -114,6 +136,7 @@ io.on('connection', (socket) => {
         socket.join(newRoom);
         activeRooms.add(newRoom);
         console.log('create room' + newRoom);
+        writeToLog('New Room Created by: ' + socket.id + ". room ID: " + newRoom);
         io.to(socket.id).emit('created', newRoom);
     });
 
@@ -154,16 +177,31 @@ io.on('connection', (socket) => {
         rooms[roomId].players.push({ name: user, profilePicture: profilePicture, playerId: socketId });
         const roomInformation = rooms[roomId];
         console.log("User in room " + roomId + " Created");
+        writeToLog('User in room ' + roomId + ' Created, with name: ' + user);
         io.to(roomId).emit('user selected', roomInformation);
     });
 
     socket.on('settings update', (newSettings) => {
         const roomId = newSettings.roomId;
+        if (!rooms[roomId]) {
+            return;
+        }
+        const playerId = socket.id;
+        const playerIndex = rooms[roomId].players.findIndex(player => player.playerId === playerId);
+        // this is for security reasons, only the first player can change the settings (i hope leo doesnt find out how to glitch this)
+        if (playerIndex !== 0) {
+
+            io.to(socket.id).emit('room information updated', rooms[roomId]);
+            return;
+        }
+ 
+
         const newSettingsData = newSettings.newSettings;
         console.log(newSettingsData)
         rooms[roomId].game.settings = newSettingsData;
         const newRoomData = rooms[roomId];
         console.log("Settings updated for room ", newSettingsData);
+        writeToLog('Settings updated for room ' + roomId + ' by: ' + socket.id);
         io.to(roomId).emit('room information updated', newRoomData);
     });
 
@@ -179,28 +217,28 @@ io.on('connection', (socket) => {
             activeRooms.delete(room);
             console.log('deleted room: ' + room);
         }
-        // remove user from room
-
 
         if (rooms[room]) {
 
             const roomInformation = removeUserFromRoom(room, socket.id);
             console.log("Removed user information from room.");
+            writeToLog('Removed user information from room: ' + room + ' by: ' + socket.id);
             io.to(room).emit('left', { roomInformation });
 
         } else {
+            writeToLog('Room ' + room + ' does not exist. Yet someone tried to leave it.');
             console.log(`Room ${room} does not exist.`);
         }
-        // rooms[room].splice(roomIndex, 1);
-        // const users = rooms[room];
     });
 
 
 
     socket.on('check if room exists', (room) => {
         if (activeRooms.has(room)) {
+            writeToLog('Room ' + room + ' exists. Checked by: ' + socket.id);
             io.to(socket.id).emit('room exists', room);
         } else {
+            writeToLog('Room ' + room + ' does not exist. Checked by: ' + socket.id);
             io.to(socket.id).emit('room does not exist', room);
         }
     });
