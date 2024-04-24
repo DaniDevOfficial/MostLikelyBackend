@@ -33,8 +33,8 @@ function writeToLog(message) {
         if (err) {
             console.error('Error writing to log file:', err);
         }
-    }); 
-} 
+    });
+}
 writeToLog("Server Started");
 
 
@@ -115,6 +115,7 @@ io.on('connection', (socket) => {
         disconnectRooms.forEach(room => {
             socket.leave(room);
             const usersInRoom = getUsersInRoom(room);
+            writeToLog('User left room: ' + room + ' by: ' + socket.id);
             if (checkIfRoomIsEmpty(room)) {
                 activeRooms.delete(room);
                 writeToLog('room is empty and got deleted: ' + room);
@@ -160,13 +161,14 @@ io.on('connection', (socket) => {
 
         if (!rooms[roomId]) {
             rooms[roomId] = {
+                roomId: roomId,
                 game: {
                     settings: {
                         QuestionWriteTime: 120,
                         VoteTime: 30,
                         AmountOfQuestionsPerPlayer: 2,
                     },
-                    state: "lobby",
+                    state: "waiting",
                 },
                 players: [],
                 questions: [],
@@ -179,6 +181,8 @@ io.on('connection', (socket) => {
         console.log("User in room " + roomId + " Created");
         writeToLog('User in room ' + roomId + ' Created, with name: ' + user);
         io.to(roomId).emit('user selected', roomInformation);
+
+
     });
 
     socket.on('settings update', (newSettings) => {
@@ -190,11 +194,11 @@ io.on('connection', (socket) => {
         const playerIndex = rooms[roomId].players.findIndex(player => player.playerId === playerId);
         // this is for security reasons, only the first player can change the settings (i hope leo doesnt find out how to glitch this)
         if (playerIndex !== 0) {
-
+            writeToLog('User tried to change settings without being the host: ' + socket.id);
             io.to(socket.id).emit('room information updated', rooms[roomId]);
             return;
         }
- 
+
 
         const newSettingsData = newSettings.newSettings;
         console.log(newSettingsData)
@@ -203,6 +207,64 @@ io.on('connection', (socket) => {
         console.log("Settings updated for room ", newSettingsData);
         writeToLog('Settings updated for room ' + roomId + ' by: ' + socket.id);
         io.to(roomId).emit('room information updated', newRoomData);
+    });
+
+
+    socket.on('start game', (roomId) => {
+        if (!rooms[roomId]) {
+            return;
+        }
+        const playerId = socket.id;
+        const playerIndex = rooms[roomId].players.findIndex(player => player.playerId === playerId);
+        // this is for security reasons, only the first player can change the settings (i hope leo doesnt find out how to glitch this)
+        if (playerIndex !== 0) {
+            writeToLog('User tried to start game without being the host: ' + socket.id);
+            io.to(socket.id).emit('room information updated', rooms[roomId]);
+            return;
+        }
+        rooms[roomId].game.state = "questionWriteTime";
+        const roomInformation = rooms[roomId];
+        console.log("Game started for room ", roomId);
+        writeToLog('Game started for room ' + roomId + ' by: ' + socket.id);
+        io.to(roomId).emit('game started', roomInformation);
+
+        const questionWriteTime = rooms[roomId].game.settings.QuestionWriteTime * 1000;
+        console.log("Question Write Time: " + questionWriteTime);
+        setTimeout(() => {
+            console.log("Question Write Time Over for room " + roomId);
+            writeToLog('Question Write Time Over for room ' + roomId);
+            io.to(roomId).emit('question write time over', roomId);
+        }, questionWriteTime);
+
+    });
+
+    socket.on('player finished writing', (questionsWithRoomId) => {
+        const roomId = questionsWithRoomId.roomId;
+        const playerId = socket.id;
+        const questions = questionsWithRoomId.questions;
+
+        if (!rooms[roomId]) {
+            return;
+        }
+
+        if (!rooms[roomId].finishedWritingQuestions) {
+            rooms[roomId].finishedWritingQuestions = [];
+        }
+        if (rooms[roomId].finishedWritingQuestions.includes(playerId)) {
+            return;
+        }
+
+        rooms[roomId].finishedWritingQuestions.push(playerId);
+        rooms[roomId].questions.push(...questions);
+        if (rooms[roomId].finishedWritingQuestions.length === rooms[roomId].players.length) {
+            console.log("All players finished writing questions for room ", roomId);
+            writeToLog('All players finished writing questions for room ' + roomId);
+            io.to(roomId).emit('room information updated', rooms[roomId]);
+        } else {
+            console.log("Player finished writing questions for room ", roomId);
+            writeToLog('Player finished writing questions for room ' + roomId + ' by: ' + socket.id);
+            io.to(roomId).emit('room information updated', rooms[roomId]);
+        }
     });
 
 
