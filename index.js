@@ -164,19 +164,25 @@ io.on('connection', (socket) => {
                 roomId: roomId,
                 game: {
                     settings: {
-                        QuestionWriteTime: 120,
+                        QuestionWriteTime: 5,
                         VoteTime: 30,
                         AmountOfQuestionsPerPlayer: 2,
                     },
                     state: "waiting",
+
                 },
                 players: [],
                 questions: [],
+                finishedWritingQuestions: [],
+                voting: [
+                    currentVoteId = 0,
+                    currentVoteState = "voting",
+                ],
             };
         }
 
 
-        rooms[roomId].players.push({ name: user, profilePicture: profilePicture, playerId: socketId });
+        rooms[roomId].players.push({ name: user, profilePicture: profilePicture, playerId: socketId, role: '' });
         const roomInformation = rooms[roomId];
         console.log("User in room " + roomId + " Created");
         writeToLog('User in room ' + roomId + ' Created, with name: ' + user);
@@ -233,9 +239,8 @@ io.on('connection', (socket) => {
         setTimeout(() => {
             console.log("Question Write Time Over for room " + roomId);
             writeToLog('Question Write Time Over for room ' + roomId);
-            io.to(roomId).emit('question write time over', roomId);
+            io.to(roomId).emit('finish writing questions', rooms[roomId]);
         }, questionWriteTime);
-
     });
 
     socket.on('player finished writing', (questionsWithRoomId) => {
@@ -259,6 +264,19 @@ io.on('connection', (socket) => {
         if (rooms[roomId].finishedWritingQuestions.length === rooms[roomId].players.length) {
             console.log("All players finished writing questions for room ", roomId);
             writeToLog('All players finished writing questions for room ' + roomId);
+
+            rooms[roomId].game.state = "questionVoteTime";
+            // shuffle questions
+            rooms[roomId].questions.sort(() => Math.random() - 0.5);
+            rooms[roomId].questions = rooms[roomId].questions.map((question, index) => ({
+                id: index,
+                ...question
+            }));
+
+            if (rooms[roomId].questions.length <= 0) {
+                rooms[roomId].questions = [{ id: 0, question: "No questions were written" }];
+            }
+            console.log(rooms[roomId].questions);
             io.to(roomId).emit('room information updated', rooms[roomId]);
         } else {
             console.log("Player finished writing questions for room ", roomId);
@@ -267,8 +285,14 @@ io.on('connection', (socket) => {
         }
     });
 
+    socket.on('vote', (voteData) => {
+        const roomId = voteData.roomId;
+        const playerId = socket.id;
+        const vote = voteData.vote;
+        const questionId = voteData.questionId;
+        
 
-
+    });
 
     socket.on('leave', (room) => {
         socket.leave(room);
@@ -307,6 +331,16 @@ io.on('connection', (socket) => {
 }
 );
 
+process.on('uncaughtException', (err) => {
+    console.error('Uncaught Exception:', err);
+    writeToLog('Uncaught Exception: ' + err.stack);
+    process.exit(1); // Exit the process due to the uncaught exception
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+    writeToLog('Unhandled Rejection: ' + reason.stack || reason);
+});
 
 server.listen(port, () => {
     console.log(`listening on Port ${port}`);
