@@ -276,7 +276,6 @@ io.on('connection', (socket) => {
             if (rooms[roomId].questions.length <= 0) {
                 rooms[roomId].questions = [{ id: 0, question: "No questions were written" }];
             }
-            console.log(rooms[roomId].questions);
             io.to(roomId).emit('room information updated', rooms[roomId]);
         } else {
             console.log("Player finished writing questions for room ", roomId);
@@ -290,7 +289,34 @@ io.on('connection', (socket) => {
         const playerId = socket.id;
         const vote = voteData.vote;
         const questionId = voteData.questionId;
-        
+        const currentQuestion = rooms[roomId].questions.find(question => question.id === questionId);
+        if (!currentQuestion) {
+            return;
+        }
+        if (currentQuestion.votes?.some(vote => vote.fromWhoId === playerId)) {
+            console.log("Player already voted for this question ", playerId);
+            return;
+        }
+
+        if (!currentQuestion.votes) {
+            currentQuestion.votes = [];
+        }
+        currentQuestion.votes.push(vote);
+        console.log(currentQuestion)
+        if (currentQuestion.votes.length === rooms[roomId].players.length) {
+
+            rooms[roomId].voting[1] = "finished";
+            io.to(roomId).emit('room information updated', rooms[roomId]);
+            return;
+        } else {
+            console.log("Player voted for room ", roomId);
+            writeToLog('Player voted for room ' + roomId + ' by: ' + socket.id);
+            io.to(roomId).emit('room information updated', rooms[roomId]);
+
+        }
+
+
+
 
     });
 
