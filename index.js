@@ -103,6 +103,18 @@ function getUserRooms(userId) {
 }
 
 
+setInterval(() => {
+    console.log(activeRooms)
+    activeRooms.forEach(room => {
+        if (checkIfRoomIsEmpty(room)) {
+            activeRooms.delete(room);
+            delete rooms[room];
+            console.log('Room deleted:', room);
+            writeToLog('Room deleted: ' + room);
+        }
+    });
+}, 10 * 60 * 1000);
+
 io.on('connection', (socket) => {
 
     writeToLog('A user connected: ' + socket.id);
@@ -312,12 +324,48 @@ io.on('connection', (socket) => {
             console.log("Player voted for room ", roomId);
             writeToLog('Player voted for room ' + roomId + ' by: ' + socket.id);
             io.to(roomId).emit('room information updated', rooms[roomId]);
-
         }
 
+    });
+
+    socket.on('next vote', (roomId) => {
+        if (!rooms[roomId]) {
+            return;
+        }
+        const amountOfQuestions = rooms[roomId].questions.length;
+        console.log(amountOfQuestions)
+        if (rooms[roomId].voting[0] === amountOfQuestions - 1) {
+            rooms[roomId].game.state = "ended";
+            io.to(roomId).emit('room information updated', rooms[roomId]);
+            return;
+        }
+        rooms[roomId].voting[0]++;
+        rooms[roomId].voting[1] = "voting";
+        io.to(roomId).emit('room information updated', rooms[roomId]);
+    });
 
 
 
+    socket.on('reset game', (roomId) => {
+        if (!rooms[roomId]) {
+            return;
+        }
+        const playerId = socket.id;
+        const playerIndex = rooms[roomId].players.findIndex(player => player.playerId === playerId);
+        // this is for security reasons, only the first player can change the settings (i hope leo doesnt find out how to glitch this)
+        if (playerIndex !== 0) {
+            writeToLog('User tried to reset game without being the host: ' + socket.id);
+            io.to(socket.id).emit('room information updated', rooms[roomId]);
+            return;
+        }
+        rooms[roomId].game.state = "waiting";
+        rooms[roomId].questions = [];
+        rooms[roomId].finishedWritingQuestions = [];
+        rooms[roomId].voting = [
+            currentVoteId = 0,
+            currentVoteState = "voting",
+        ];
+        io.to(roomId).emit('room information updated', rooms[roomId]);
     });
 
     socket.on('leave', (room) => {
