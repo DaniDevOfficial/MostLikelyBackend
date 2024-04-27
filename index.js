@@ -15,7 +15,7 @@ const io = new Server(server, {
     }
 });
 
-const activeRooms = new Set();
+const activeRooms = {}
 const userRooms = {};
 const rooms = {};
 
@@ -102,18 +102,69 @@ function getUserRooms(userId) {
     return userRooms[userId] || [];
 }
 
+function isRoomInactive(roomId, currentTime, maxInactiveTime) {
+    const room = rooms[roomId];
+    if (!room) return false;
+    const lastUpdatedTime = new Date(room.lastUpdated).getTime();
+    return currentTime - lastUpdatedTime > maxInactiveTime;
+}
+
 
 setInterval(() => {
-    console.log(activeRooms)
-    activeRooms.forEach(room => {
-        if (checkIfRoomIsEmpty(room)) {
-            activeRooms.delete(room);
-            delete rooms[room];
-            console.log('Room deleted:', room);
-            writeToLog('Room deleted: ' + room);
+
+    Object.keys(activeRooms).forEach(roomId => {
+        const currentTime = new Date().getTime();
+
+        if (checkIfRoomIsEmpty(roomId)) {
+            delete activeRooms[roomId];
+            delete rooms[roomId];
+            console.log('Room deleted due to inactivity:', roomId);
+            writeToLog('Room deleted due to inactivity: ' + roomId);
+
+        }
+        if (isRoomInactive(roomId, 100000)) {
+            delete activeRooms[roomId];
+            delete rooms[roomId];
+            console.log('Room deleted due to inactivity:', roomId);
+            io.to(roomId).emit('room deleted', roomId);
+            writeToLog('Room deleted due to inactivity: ' + roomId);
         }
     });
 }, 10 * 60 * 1000);
+
+
+function checkIfRoomIsEmpty(roomId) {
+    const room = rooms[roomId];
+    return room && room.players.length === 0;
+}
+
+// Function to check if a room is inactive based on lastUpdated timestamp
+function isRoomInactive(roomId, maxInactiveTime) {
+    const currentTime = new Date();
+    const lastUpdatedTime = new Date(activeRooms[roomId])
+    const timeDifference = calculateSecondsBetweenDates(lastUpdatedTime, currentTime);
+    if (timeDifference > maxInactiveTime) {
+        console.log("Room is inactive: ", roomId)
+        return true;
+    } else {
+        console.log("Room is active: ", roomId)
+        return false;
+    }
+}
+function calculateSecondsBetweenDates(date1, date2) {
+    const date1Ms = date1.getTime();
+    const date2Ms = date2.getTime();
+
+    const differenceMs = Math.abs(date1Ms - date2Ms);
+
+    const seconds = Math.floor(differenceMs / 1000);
+
+    return seconds;
+}
+
+function updateLastUpdateDate(roomId) {
+    activeRooms[roomId] = new Date();
+}
 
 io.on('connection', (socket) => {
 
@@ -129,7 +180,7 @@ io.on('connection', (socket) => {
             const usersInRoom = getUsersInRoom(room);
             writeToLog('User left room: ' + room + ' by: ' + socket.id);
             if (checkIfRoomIsEmpty(room)) {
-                activeRooms.delete(room);
+                delete activeRooms[room];
                 writeToLog('room is empty and got deleted: ' + room);
                 console.log('room is empty: ' + room);
             }
@@ -141,29 +192,54 @@ io.on('connection', (socket) => {
         delete userRooms[socket.id];
     });
 
+
     socket.on('create', () => {
         let newRoom = generateRandomRoom();
-        while (activeRooms.has(newRoom)) {
-            newRoom = generateRandomRoom();
+        while (activeRooms[newRoom]) {
+            newRoom = Number(newRoom) + 1
+            console.log('room already exists, creating new one: ' + newRoom)
         }
         socket.join(newRoom);
-        activeRooms.add(newRoom);
-        console.log('create room' + newRoom);
+        activeRooms[newRoom] = new Date();
+        console.log('create room', activeRooms);
         writeToLog('New Room Created by: ' + socket.id + ". room ID: " + newRoom);
         io.to(socket.id).emit('created', newRoom);
     });
 
+
     socket.on('join', (room) => {
-        if (activeRooms.has(room)) {
+        const usersRooms = getUserRooms(socket.id);
+        usersRooms.forEach(userRoom => {
+            if (userRoom !== room) {
+                socket.leave(userRoom);
+                removeUserRoom(socket.id, userRoom);
+                console.log(`User ${socket.id} removed from non-existent room ${userRoom}`);
+                if (checkIfRoomIsEmpty(userRoom)) {
+                    delete activeRooms[userRoom];
+                    writeToLog('room is empty and got deleted: ' + room);
+                    console.log('room is empty: ' + room);
+                } else {
+                    const roomInformation = removeUserFromRoom(userRoom, socket.id);
+                    console.log(roomInformation)
+                    io.to(userRoom).emit('left', { roomInformation });
+                }
+            }
+        });
+
+        if (activeRooms[room]) {
             socket.join(room);
             const usersInRoom = getUsersInRoom(room);
             console.log("users in room: " + room + " " + usersInRoom);
             addUserRoom(socket.id, room);
-
         } else {
             io.to(socket.id).emit('room does not exist', room);
+            usersRooms.forEach(userRoom => {
+                socket.leave(userRoom);
+                removeUserRoom(socket.id, userRoom);
+            });
         }
     });
+
 
     socket.on('user selection', (data) => {
         const roomId = data.room;
@@ -171,11 +247,18 @@ io.on('connection', (socket) => {
         const profilePicture = data.profilePicture;
         const socketId = socket.id;
 
+        if (activeRooms[roomId] === undefined) {
+            console.log("Room does not exist");
+            writeToLog('Room does not exist: ' + roomId);
+            io.to(socket.id).emit('room does not exist', roomId);
+            return;
+        }
+
         if (!rooms[roomId]) {
             rooms[roomId] = {
                 roomId: roomId,
                 game: {
-                    settings: {
+                    settings: { 
                         QuestionWriteTime: 5,
                         VoteTime: 30,
                         AmountOfQuestionsPerPlayer: 2,
@@ -193,7 +276,7 @@ io.on('connection', (socket) => {
             };
         }
 
-
+        updateLastUpdateDate(roomId);
         rooms[roomId].players.push({ name: user, profilePicture: profilePicture, playerId: socketId, role: '' });
         const roomInformation = rooms[roomId];
         console.log("User in room " + roomId + " Created");
@@ -206,6 +289,7 @@ io.on('connection', (socket) => {
     socket.on('settings update', (newSettings) => {
         const roomId = newSettings.roomId;
         if (!rooms[roomId]) {
+            io.to(socket.id).emit('room does not exist', roomId);
             return;
         }
         const playerId = socket.id;
@@ -220,6 +304,7 @@ io.on('connection', (socket) => {
 
         const newSettingsData = newSettings.newSettings;
         console.log(newSettingsData)
+        updateLastUpdateDate(roomId);
         rooms[roomId].game.settings = newSettingsData;
         const newRoomData = rooms[roomId];
         console.log("Settings updated for room ", newSettingsData);
@@ -230,6 +315,8 @@ io.on('connection', (socket) => {
 
     socket.on('start game', (roomId) => {
         if (!rooms[roomId]) {
+            io.to(socket.id).emit('room does not exist', roomId);
+
             return;
         }
         const playerId = socket.id;
@@ -241,6 +328,7 @@ io.on('connection', (socket) => {
             return;
         }
         rooms[roomId].game.state = "questionWriteTime";
+        updateLastUpdateDate(roomId);
         const roomInformation = rooms[roomId];
         console.log("Game started for room ", roomId);
         writeToLog('Game started for room ' + roomId + ' by: ' + socket.id);
@@ -251,6 +339,7 @@ io.on('connection', (socket) => {
         setTimeout(() => {
             console.log("Question Write Time Over for room " + roomId);
             writeToLog('Question Write Time Over for room ' + roomId);
+            updateLastUpdateDate(roomId);
             io.to(roomId).emit('finish writing questions', rooms[roomId]);
         }, questionWriteTime);
     });
@@ -259,11 +348,13 @@ io.on('connection', (socket) => {
         const roomId = questionsWithRoomId.roomId;
         const playerId = socket.id;
         const questions = questionsWithRoomId.questions;
-
+        
         if (!rooms[roomId]) {
+            io.to(socket.id).emit('room does not exist', roomId);
             return;
         }
-
+        
+        updateLastUpdateDate(roomId);
         if (!rooms[roomId].finishedWritingQuestions) {
             rooms[roomId].finishedWritingQuestions = [];
         }
@@ -299,12 +390,17 @@ io.on('connection', (socket) => {
     socket.on('vote', (voteData) => {
         const roomId = voteData.roomId;
         const playerId = socket.id;
+        if (!rooms[roomId]) {
+            io.to(socket.id).emit('room does not exist', roomId);
+            return;
+        }
         const vote = voteData.vote;
         const questionId = voteData.questionId;
         const currentQuestion = rooms[roomId].questions.find(question => question.id === questionId);
         if (!currentQuestion) {
             return;
         }
+        updateLastUpdateDate(roomId);
         if (currentQuestion.votes?.some(vote => vote.fromWhoId === playerId)) {
             console.log("Player already voted for this question ", playerId);
             return;
@@ -330,8 +426,11 @@ io.on('connection', (socket) => {
 
     socket.on('next vote', (roomId) => {
         if (!rooms[roomId]) {
+            io.to(socket.id).emit('room does not exist', roomId);
             return;
         }
+        updateLastUpdateDate(roomId);
+
         const amountOfQuestions = rooms[roomId].questions.length;
         console.log(amountOfQuestions)
         if (rooms[roomId].voting[0] === amountOfQuestions - 1) {
@@ -348,8 +447,12 @@ io.on('connection', (socket) => {
 
     socket.on('reset game', (roomId) => {
         if (!rooms[roomId]) {
+            io.to(socket.id).emit('room does not exist', roomId);
+
             return;
         }
+        updateLastUpdateDate(roomId);
+
         const playerId = socket.id;
         const playerIndex = rooms[roomId].players.findIndex(player => player.playerId === playerId);
         // this is for security reasons, only the first player can change the settings (i hope leo doesnt find out how to glitch this)
@@ -372,9 +475,10 @@ io.on('connection', (socket) => {
         socket.leave(room);
         removeUserRoom(socket.id, room);
         const usersInRoom = getUsersInRoom(room);
+
         console.log(userRooms)
         if (checkIfRoomIsEmpty(room)) {
-            activeRooms.delete(room);
+            delete activeRooms[room];
             console.log('deleted room: ' + room);
         }
 
@@ -394,7 +498,7 @@ io.on('connection', (socket) => {
 
 
     socket.on('check if room exists', (room) => {
-        if (activeRooms.has(room)) {
+        if (activeRooms[room]) {
             writeToLog('Room ' + room + ' exists. Checked by: ' + socket.id);
             io.to(socket.id).emit('room exists', room);
         } else {
