@@ -138,6 +138,18 @@ function checkIfRoomIsEmpty(roomId) {
     return room && room.players.length === 0;
 }
 
+function checkIfActiveRoomIsEmpty(roomId) {
+    const clients = io.sockets.adapter.rooms.get(roomId);
+    
+    if (!clients) {
+        console.log("Room is empty: ", roomId)
+        return true;
+    }
+    console.log("Room is not empty: ", roomId)
+    return false;
+    
+}
+
 // Function to check if a room is inactive based on lastUpdated timestamp
 function isRoomInactive(roomId, maxInactiveTime) {
     const currentTime = new Date();
@@ -175,12 +187,14 @@ io.on('connection', (socket) => {
         writeToLog('A user disconnected: ' + socket.id);
 
         const disconnectRooms = getUserRooms(socket.id);
+        console.log("Rooms to disconnect: ", disconnectRooms)
         disconnectRooms.forEach(room => {
             socket.leave(room);
-            const usersInRoom = getUsersInRoom(room);
+            console.log("User left room: " + room); 
             writeToLog('User left room: ' + room + ' by: ' + socket.id);
-            if (checkIfRoomIsEmpty(room)) {
+            if (checkIfActiveRoomIsEmpty(room)) {
                 delete activeRooms[room];
+                delete rooms[room];
                 writeToLog('room is empty and got deleted: ' + room);
                 console.log('room is empty: ' + room);
             }
@@ -216,6 +230,7 @@ io.on('connection', (socket) => {
                 console.log(`User ${socket.id} removed from non-existent room ${userRoom}`);
                 if (checkIfRoomIsEmpty(userRoom)) {
                     delete activeRooms[userRoom];
+                    delete rooms[userRoom];
                     writeToLog('room is empty and got deleted: ' + room);
                     console.log('room is empty: ' + room);
                 } else {
@@ -474,10 +489,8 @@ io.on('connection', (socket) => {
     socket.on('leave', (room) => {
         socket.leave(room);
         removeUserRoom(socket.id, room);
-        const usersInRoom = getUsersInRoom(room);
 
-        console.log(userRooms)
-        if (checkIfRoomIsEmpty(room)) {
+        if (checkIfActiveRoomIsEmpty(room)) {
             delete activeRooms[room];
             console.log('deleted room: ' + room);
         }
