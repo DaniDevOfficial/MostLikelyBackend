@@ -18,7 +18,7 @@ const io = new Server(server, {
 let activeRooms = {}
 let userRooms = {};
 let rooms = {};
-
+let connectedSockets = {};
 
 const fs = require('fs');
 const path = require('path');
@@ -161,7 +161,7 @@ setInterval(() => {
             writeToLog('Room deleted due to inactivity: ' + roomId);
         }
     });
-}, 3 * 60 * 1000 );
+}, 3 *  60 * 1000 );
 
 
 function checkIfRoomIsEmpty(roomId) {
@@ -171,7 +171,7 @@ function checkIfRoomIsEmpty(roomId) {
 
 function checkIfActiveRoomIsEmpty(roomId) {
     const clients = io.sockets.adapter.rooms.get(roomId);
-
+    console.log("Clients in room: ", clients)
     if (!clients) {
         console.log("Room is empty: ", roomId)
         return true;
@@ -180,6 +180,8 @@ function checkIfActiveRoomIsEmpty(roomId) {
     return false;
 
 }
+
+
 
 /**
  * Checks if a room is inactive based on the provided maximum inactive time.
@@ -216,10 +218,22 @@ function updateLastUpdateDate(roomId) {
     activeRooms[roomId] = new Date();
 }
 
+
+function kickPlayer(playerId) {
+    const socket = connectedSockets[playerId];
+    if (socket) {
+      // Emit a message to the player's socket to force disconnect
+      socket.emit('room does not exist', 'You have been kicked from the game.');
+      // Disconnect the player's socket
+    }
+  }
+
 io.on('connection', (socket) => {
 
     writeToLog('A user connected: ' + socket.id);
     console.log('a user connected: ' + socket.id);
+    connectedSockets[socket.id] = socket;
+    
     socket.on('disconnect', () => {
         console.log('user disconnected: ' + socket.id);
         writeToLog('A user disconnected: ' + socket.id);
@@ -238,9 +252,10 @@ io.on('connection', (socket) => {
             }
 
             const roomInformation = removeUserFromRoom(room, socket.id);
-            io.to(room).emit('left', { roomInformation });
+            io.to(room).emit('room information updated',  roomInformation );
         });
         console.log("All now Active Rooms: ", activeRooms);
+        delete connectedSockets[socket.id];
         delete userRooms[socket.id];
     });
 
@@ -334,7 +349,7 @@ io.on('connection', (socket) => {
         const roomInformation = rooms[roomId];
         console.log("User in room " + roomId + " Created");
         writeToLog('User in room ' + roomId + ' Created, with name: ' + user);
-        io.to(roomId).emit('user selected', roomInformation);
+        io.to(roomId).emit('room information updated', roomInformation);
 
 
     });
@@ -385,7 +400,7 @@ io.on('connection', (socket) => {
         const roomInformation = rooms[roomId];
         console.log("Game started for room ", roomId);
         writeToLog('Game started for room ' + roomId + ' by: ' + socket.id);
-        io.to(roomId).emit('game started', roomInformation);
+        io.to(roomId).emit('room information updated', roomInformation);
 
         const questionWriteTime = rooms[roomId].game.settings.QuestionWriteTime * 1000;
         console.log("Question Write Time: " + questionWriteTime);
@@ -483,7 +498,12 @@ io.on('connection', (socket) => {
             return;
         }
         updateLastUpdateDate(roomId);
-
+        if(socket.id !== rooms[roomId].players[0].playerId){
+            console.log("Player tried to start next vote without being the host: ", socket.id);
+            writeToLog('Player tried to start next vote without being the host: ' + socket.id);
+            io.to(socket.id).emit('room information updated', rooms[roomId]);
+            return;
+        }
         const amountOfQuestions = rooms[roomId].questions.length;
         console.log(amountOfQuestions)
         if (rooms[roomId].voting[0] === amountOfQuestions - 1) {
@@ -495,7 +515,6 @@ io.on('connection', (socket) => {
         rooms[roomId].voting[1] = "voting";
         io.to(roomId).emit('room information updated', rooms[roomId]);
     });
-
 
     socket.on('kick player', (kickData) => {
         const roomId = kickData.roomId;
@@ -511,12 +530,20 @@ io.on('connection', (socket) => {
             return;
         }
 
+        if(socket.id === playerId){
+            console.log("Player tried to kick himself: ", socket.id);
+            writeToLog('Player tried to kick himself (how tf did you do that): ' + socket.id);
+            io.to(socket.id).emit('room information updated', rooms[roomId]);
+            return;
+        }
+
         const playerIndex = rooms[roomId].players.findIndex(player => player.playerId === playerId);
         if (playerIndex === -1) {
             return;
         }
         updateLastUpdateDate(roomId);
         removeUserRoom(playerId, roomId);
+        kickPlayer(playerId);
 
         rooms[roomId].players.splice(playerIndex, 1);
         const roomInformation = rooms[roomId];
@@ -562,10 +589,13 @@ io.on('connection', (socket) => {
 
         if (rooms[room]) {
 
-            const roomInformation = removeUserFromRoom(room, socket.id);
+            const playerIndex = rooms[room].players.findIndex(player => player.playerId === socket.id);
+            if (playerIndex !== -1) {
+                rooms[room].players.splice(playerIndex, 1);
+            }
             console.log("Removed user information from room.");
             writeToLog('Removed user information from room: ' + room + ' by: ' + socket.id);
-            io.to(room).emit('left', { roomInformation });
+            io.to(room).emit('room information updated',  rooms[room] );
 
         } else {
             writeToLog('Room ' + room + ' does not exist. Yet someone tried to leave it.');
