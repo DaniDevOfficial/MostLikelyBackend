@@ -44,13 +44,12 @@ function restartServer() {
     userRooms = {};
     rooms = {};
     io.emit('server restart');
-
 }
 
 function calculateTimeUntilRestart() {
     const now = new Date();
     const tomorrow = new Date(now);
-    tomorrow.setDate(now.getDate() + 1);
+    tomorrow.setDate(now.getDate() + 1); 
     tomorrow.setHours(3, 33, 0, 0);
     const timeUntilRestart = tomorrow - now;
     return timeUntilRestart;
@@ -140,12 +139,6 @@ function getUserRooms(userId) {
     return userRooms[userId] || [];
 }
 
-function isRoomInactive(roomId, currentTime, maxInactiveTime) {
-    const room = rooms[roomId];
-    if (!room) return false;
-    const lastUpdatedTime = new Date(room.lastUpdated).getTime();
-    return currentTime - lastUpdatedTime > maxInactiveTime;
-}
 
 
 setInterval(() => {
@@ -160,7 +153,7 @@ setInterval(() => {
             writeToLog('Room deleted due to inactivity: ' + roomId);
 
         }
-        if (isRoomInactive(roomId, 100000)) {
+        if (isRoomInactive(roomId, 15 * 60 )) {
             delete activeRooms[roomId];
             delete rooms[roomId];
             console.log('Room deleted due to inactivity:', roomId);
@@ -168,7 +161,7 @@ setInterval(() => {
             writeToLog('Room deleted due to inactivity: ' + roomId);
         }
     });
-}, 10 * 60 * 1000);
+}, 3 * 60 * 1000 );
 
 
 function checkIfRoomIsEmpty(roomId) {
@@ -188,7 +181,14 @@ function checkIfActiveRoomIsEmpty(roomId) {
 
 }
 
-// Function to check if a room is inactive based on lastUpdated timestamp
+/**
+ * Checks if a room is inactive based on the provided maximum inactive time.
+ *
+ * @param {string} roomId - The ID of the room to check.
+ * @param {number} maxInactiveTime - The maximum allowed inactive time in seconds.
+ * @returns {boolean} Returns `true` if the room is inactive, `false` otherwise.
+ */
+
 function isRoomInactive(roomId, maxInactiveTime) {
     const currentTime = new Date();
     const lastUpdatedTime = new Date(activeRooms[roomId])
@@ -497,6 +497,33 @@ io.on('connection', (socket) => {
     });
 
 
+    socket.on('kick player', (kickData) => {
+        const roomId = kickData.roomId;
+        const playerId = kickData.playerId;
+        if (!rooms[roomId]) {
+            io.to(socket.id).emit('room does not exist', roomId);
+            return;
+        }
+        if(socket.id !== rooms[roomId].players[0].playerId){
+            console.log("Player tried to kick someone without being the host: ", socket.id);
+            writeToLog('Player tried to kick someone without being the host: ' + socket.id);
+            io.to(socket.id).emit('room information updated', rooms[roomId]);
+            return;
+        }
+
+        const playerIndex = rooms[roomId].players.findIndex(player => player.playerId === playerId);
+        if (playerIndex === -1) {
+            return;
+        }
+        updateLastUpdateDate(roomId);
+        removeUserRoom(playerId, roomId);
+
+        rooms[roomId].players.splice(playerIndex, 1);
+        const roomInformation = rooms[roomId];
+        console.log("Player kicked from room ", roomId);
+        writeToLog('Player: '+ playerId + ' kicked from room ' + roomId + ' by: ' + socket.id);
+        io.to(roomId).emit('room information updated', roomInformation);
+    });
 
     socket.on('reset game', (roomId) => {
         if (!rooms[roomId]) {
