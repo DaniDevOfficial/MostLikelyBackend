@@ -15,9 +15,9 @@ const io = new Server(server, {
     }
 });
 
-const activeRooms = {}
-const userRooms = {};
-const rooms = {};
+let activeRooms = {}
+let userRooms = {};
+let rooms = {};
 
 
 const fs = require('fs');
@@ -37,6 +37,44 @@ function writeToLog(message) {
 }
 writeToLog("Server Started");
 
+function restartServer() {
+    writeToLog("Server Restarted");
+    console.log('Server Restarted')
+    activeRooms = {};
+    userRooms = {};
+    rooms = {};
+    io.emit('server restart');
+
+}
+
+function calculateTimeUntilRestart() {
+    const now = new Date();
+    const tomorrow = new Date(now);
+    tomorrow.setDate(now.getDate() + 1);
+    tomorrow.setHours(3, 33, 0, 0);
+    const timeUntilRestart = tomorrow - now;
+    return timeUntilRestart;
+}
+
+// Schedule server restart every day at 00:00 UTC
+function scheduleServerRestart() {
+    const timeUntilRestart = calculateTimeUntilRestart();
+    const warningInterval = 60000;
+
+    for (let i = 10; i > 0; i--) {
+        const warningTime = timeUntilRestart - (i * warningInterval);
+        setTimeout(() => {
+            console.log('Server will restart in', i, 'minutes');
+            io.emit('restart warning', { timeUntilRestart: i * warningInterval });
+        }, warningTime);
+    }
+
+    console.log('Server will restart in', timeUntilRestart, 'milliseconds');
+    setTimeout(() => {
+        restartServer();
+        scheduleServerRestart();
+    }, timeUntilRestart);
+}
 
 function getUsersInRoom(roomName) {
     const clients = io.sockets.adapter.rooms.get(roomName);
@@ -140,14 +178,14 @@ function checkIfRoomIsEmpty(roomId) {
 
 function checkIfActiveRoomIsEmpty(roomId) {
     const clients = io.sockets.adapter.rooms.get(roomId);
-    
+
     if (!clients) {
         console.log("Room is empty: ", roomId)
         return true;
     }
     console.log("Room is not empty: ", roomId)
     return false;
-    
+
 }
 
 // Function to check if a room is inactive based on lastUpdated timestamp
@@ -190,7 +228,7 @@ io.on('connection', (socket) => {
         console.log("Rooms to disconnect: ", disconnectRooms)
         disconnectRooms.forEach(room => {
             socket.leave(room);
-            console.log("User left room: " + room); 
+            console.log("User left room: " + room);
             writeToLog('User left room: ' + room + ' by: ' + socket.id);
             if (checkIfActiveRoomIsEmpty(room)) {
                 delete activeRooms[room];
@@ -273,7 +311,7 @@ io.on('connection', (socket) => {
             rooms[roomId] = {
                 roomId: roomId,
                 game: {
-                    settings: { 
+                    settings: {
                         QuestionWriteTime: 5,
                         VoteTime: 30,
                         AmountOfQuestionsPerPlayer: 2,
@@ -363,12 +401,12 @@ io.on('connection', (socket) => {
         const roomId = questionsWithRoomId.roomId;
         const playerId = socket.id;
         const questions = questionsWithRoomId.questions;
-        
+
         if (!rooms[roomId]) {
             io.to(socket.id).emit('room does not exist', roomId);
             return;
         }
-        
+
         updateLastUpdateDate(roomId);
         if (!rooms[roomId].finishedWritingQuestions) {
             rooms[roomId].finishedWritingQuestions = [];
@@ -535,4 +573,6 @@ process.on('unhandledRejection', (reason, promise) => {
 
 server.listen(port, () => {
     console.log(`listening on Port ${port}`);
+
+    scheduleServerRestart();
 });  
