@@ -452,12 +452,14 @@ io.on('connection', (socket) => {
             }
             io.to(roomId).emit('room information updated', rooms[roomId]);
             const voteTime = rooms[roomId].game.settings.VoteTime * 1000;
+            const forWhichQuestion = rooms[roomId].voting[0];
+            console.log("Question to vote for: ", forWhichQuestion)
             // initial voting timer
             setTimeout(() => {
                 console.log("Voting time Over for Room " + roomId);
                 writeToLog('Voting time Over for Room ' + roomId);
                 updateLastUpdateDate(roomId);
-                io.to(roomId).emit('finish voting', rooms[roomId]);
+                io.to(roomId).emit('finish voting', forWhichQuestion);
             }, voteTime);
         } else {
             console.log("Player finished writing questions for room ", roomId);
@@ -538,11 +540,12 @@ io.on('connection', (socket) => {
         writeToLog('Next vote for room ' + roomId + ' by: ' + socket.id);
         io.to(roomId).emit('room information updated', rooms[roomId]);
         const voteTime = rooms[roomId].game.settings.VoteTime * 1000;
+        const forWhichQuestion = rooms[roomId].voting[0];
         setTimeout(() => {
             console.log("Voting time Over for Room " + roomId);
             writeToLog('Voting time Over for Room ' + roomId);
             updateLastUpdateDate(roomId);
-            io.to(roomId).emit('finish voting', rooms[roomId]);
+            io.to(roomId).emit('finish voting', forWhichQuestion);
         }, voteTime);
     });
 
