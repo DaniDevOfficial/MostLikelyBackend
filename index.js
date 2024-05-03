@@ -26,6 +26,10 @@ const path = require('path');
 // Function to create or append to a log file
 function writeToLog(message) {
     const logFilePath = path.join(__dirname, 'logs', 'app.log');
+    if (!fs.existsSync(path.join(__dirname, 'logs'))) {
+        fs.mkdirSync(path.join(__dirname, 'logs'));
+    }
+
     const timestamp = new Date().toISOString();
     const logMessage = `[${timestamp}] ${message}\n`;
 
@@ -158,11 +162,11 @@ setInterval(() => {
             console.log('Room deleted due to inactivity:', roomId);
             io.to(roomId).emit('room deleted', roomId);
             writeToLog('Room deleted due to inactivity: ' + roomId);
-        } 
+        }
     });
-},  60 * 1000);
- 
- 
+}, 60 * 1000);
+
+
 function checkIfRoomIsEmpty(roomId) {
     const room = rooms[roomId];
     return room && room.players.length === 0;
@@ -657,7 +661,7 @@ process.on('unhandledRejection', (reason, promise) => {
     writeToLog('Unhandled Rejection: ' + reason.stack || reason);
 });
 
-server.listen(port, () => {
+app.listen(port, '0.0.0.0', () => {
     console.log(`listening on Port ${port}`);
 
     scheduleServerRestart();
