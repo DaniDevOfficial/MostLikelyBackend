@@ -465,7 +465,7 @@ io.on('connection', (socket) => {
             io.to(roomId).emit('room information updated', rooms[roomId]);
         }
     });
-vb  
+
     socket.on('vote', (voteData) => {
         const roomId = voteData.roomId;
         const playerId = socket.id;
