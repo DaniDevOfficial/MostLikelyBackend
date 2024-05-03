@@ -465,7 +465,7 @@ io.on('connection', (socket) => {
             io.to(roomId).emit('room information updated', rooms[roomId]);
         }
     });
-
+vb  
     socket.on('vote', (voteData) => {
         const roomId = voteData.roomId;
         const playerId = socket.id;
@@ -661,7 +661,7 @@ process.on('unhandledRejection', (reason, promise) => {
     writeToLog('Unhandled Rejection: ' + reason.stack || reason);
 });
 
-app.listen(port, '0.0.0.0', () => {
+server.listen(port, '0.0.0.0', () => {
     console.log(`listening on Port ${port}`);
 
     scheduleServerRestart();
