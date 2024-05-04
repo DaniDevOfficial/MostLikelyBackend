@@ -330,9 +330,9 @@ io.on('connection', (socket) => {
                 roomId: roomId,
                 game: {
                     settings: {
-                        QuestionWriteTime: 5,
-                        VoteTime: 5,
-                        AmountOfQuestionsPerPlayer: 2,
+                        QuestionWriteTime: 120,
+                        VoteTime: 30,
+                        AmountOfQuestionsPerPlayer: 4,
                     },
                     state: "waiting",
 
